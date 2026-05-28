@@ -7,6 +7,7 @@ Subsequent sessions of the same day get KB + log only.
 """
 
 import json
+import re
 import sys
 import urllib.request
 import urllib.error
@@ -16,11 +17,12 @@ from pathlib import Path
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 ROOT          = Path(__file__).resolve().parent.parent
+VAULT_ROOT    = ROOT.parent
 KNOWLEDGE_DIR = ROOT / "knowledge"
 DAILY_DIR     = ROOT / "daily"
 SCRIPTS_DIR   = ROOT / "scripts"
+INBOX_DIR     = VAULT_ROOT / "Inbox"
 INDEX_FILE    = KNOWLEDGE_DIR / "index.md"
-FLUSH_LOG     = SCRIPTS_DIR / "flush.log"
 
 MAX_CONTEXT_CHARS = 12_000
 MAX_LOG_LINES     = 15
@@ -227,29 +229,6 @@ def slim_kb_index(content: str) -> str:
     return "\n".join(result)
 
 
-def is_first_run_today() -> bool:
-    """Return True if no flush.log entry exists for today's date."""
-    if not FLUSH_LOG.exists():
-        return True
-    today = datetime.now(timezone.utc).astimezone().date()
-    try:
-        lines = FLUSH_LOG.read_text(encoding="utf-8", errors="replace").splitlines()
-        for line in reversed(lines):
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split()
-            if len(parts) >= 2:
-                try:
-                    last_date = datetime.strptime(parts[0], "%Y-%m-%d").date()
-                    return last_date < today
-                except ValueError:
-                    continue
-    except Exception:
-        return True
-    return True
-
-
 def get_recent_log() -> str:
     """Read the most recent daily log (today or yesterday)."""
     today = datetime.now(timezone.utc).astimezone()
@@ -261,6 +240,142 @@ def get_recent_log() -> str:
             recent = lines[-MAX_LOG_LINES:] if len(lines) > MAX_LOG_LINES else lines
             return "\n".join(recent)
     return "(no recent daily log)"
+
+
+# ── Daily note auto-creation ───────────────────────────────────────────────────
+
+def _is_real_task(line: str) -> bool:
+    s = line.strip()
+    return s.startswith("- [ ]") and bool(s[5:].strip())
+
+
+def _parse_prev_note(content: str) -> dict:
+    """Extract unchecked tasks from previous day's note, grouped by section."""
+    buckets: dict = {
+        "велик": [], "крит": [], "нк": [],
+        "надіслати": [], "перев": [],
+        "внутр": [], "кп_doc": [], "фінанси": [],
+        "на_завтра": [], "на_потім": [],
+    }
+    section = sub = None
+
+    for raw in content.splitlines():
+        line = raw.rstrip()
+        s    = line.strip()
+
+        if s.startswith("## "):
+            h = s[3:]
+            if   "ДЗВІНКИ"      in h: section, sub = "dzv", None
+            elif "ПОВІДОМЛЕННЯ"  in h: section, sub = "msg", None
+            elif "ЗАДАЧІ"        in h: section, sub = "tsk", None
+            elif "НА ЗАВТРА"     in h: section, sub = "zav", None
+            elif "НА ПОТІМ"      in h: section, sub = "pot", None
+            else:                      section, sub = None, None
+            continue
+
+        if s.startswith("### ") and section:
+            h = s[4:]
+            if section == "dzv":
+                if   "💰" in h:            sub = "велик"
+                elif "🚨" in h:            sub = "крит"
+                elif "🔔" in h:            sub = "нк"
+            elif section == "msg":
+                if   "Надіслати"  in h:    sub = "надіслати"
+                elif "Перевірити" in h:    sub = "перев"
+            elif section == "tsk":
+                if   "Внутрішні"  in h:    sub = "внутр"
+                elif "КП"         in h:    sub = "кп_doc"
+                elif "Фінанси"    in h:    sub = "фінанси"
+            continue
+
+        if not _is_real_task(line):
+            continue
+
+        if   section == "zav":                          buckets["на_завтра"].append(line)
+        elif section == "pot":                          buckets["на_потім"].append(line)
+        elif section in ("dzv", "msg", "tsk") and sub: buckets[sub].append(line)
+
+    return buckets
+
+
+def _is_today_potim(task: str, today_ddmm: str) -> bool:
+    m = re.search(r"- \[ \]\s+(\d{2}\.\d{2})", task)
+    return bool(m) and m.group(1) == today_ddmm
+
+
+def _blk(tasks: list, fallback: str = "- [ ] ") -> str:
+    return "\n".join(tasks) if tasks else fallback
+
+
+def create_daily_note_if_needed(briefing: str) -> None:
+    """Auto-create today's Inbox daily note with carry-over tasks + briefing."""
+    now       = datetime.now(timezone.utc).astimezone()
+    today     = now.date()
+    note_path = INBOX_DIR / f"{today.isoformat()}.md"
+
+    if note_path.exists():
+        return
+
+    today_str  = today.strftime("%d.%m.%Y")
+    day_name   = UA_DAYS.get(now.strftime("%A"), now.strftime("%A"))
+    today_ddmm = today.strftime("%d.%m")
+
+    buckets: dict = {}
+    for offset in range(1, 5):
+        prev = INBOX_DIR / f"{(today - timedelta(days=offset)).isoformat()}.md"
+        if prev.exists():
+            buckets = _parse_prev_note(prev.read_text(encoding="utf-8", errors="replace"))
+            break
+
+    na_zavtra_extra = [t for t in buckets.get("на_потім", []) if     _is_today_potim(t, today_ddmm)]
+    na_potim_rest   = [t for t in buckets.get("на_потім", []) if not _is_today_potim(t, today_ddmm)]
+    na_zavtra       = buckets.get("на_завтра", []) + na_zavtra_extra
+
+    lines = [
+        f"# 📅 {today_str} — {day_name}", "",
+        "---", "",
+        "## 🔥 Топ-5 на сьогодні", "",
+        "1. 🚨 ", "2. 🚨 ", "3. ", "4. ", "5. ", "",
+        "---", "",
+        "## 📞 ДЗВІНКИ", "",
+        "### 💰 Великий чек + критична готовність",
+        _blk(buckets.get("велик",     [])), "",
+        "### 🚨 Критичні (рішення зріле)",
+        _blk(buckets.get("крит",      [])), "",
+        "### 🔔 НК на сьогодні",
+        _blk(buckets.get("нк",        [])), "",
+        "---", "",
+        "## 💬 ПОВІДОМЛЕННЯ (Вайбер)", "",
+        "### 📤 Надіслати",
+        _blk(buckets.get("надіслати", [])), "",
+        "### 🔁 Перевірити відповідь",
+        _blk(buckets.get("перев",     [])), "",
+        "---", "",
+        "## 📋 ЗАДАЧІ", "",
+        "### 🔧 Внутрішні / підрядники",
+        _blk(buckets.get("внутр",     [])), "",
+        "### 📄 КП / договори / документи",
+        _blk(buckets.get("кп_doc",    [])), "",
+        "### 💰 Фінанси / Адмін",
+        _blk(buckets.get("фінанси",   [])), "",
+        "---", "",
+        "## 🔄 НА ЗАВТРА", "",
+        _blk(na_zavtra, "- [ ] \n- [ ] \n- [ ] "), "",
+        "---", "",
+        "## 📅 НА ПОТІМ (з датою)", "",
+        _blk(na_potim_rest), "",
+        "---", "",
+        "## 📝 Нотатки за день", "",
+        "---", "",
+        "## 📊 Бриф воронки", "",
+        briefing,
+    ]
+
+    try:
+        INBOX_DIR.mkdir(parents=True, exist_ok=True)
+        note_path.write_text("\n".join(lines), encoding="utf-8")
+    except Exception:
+        pass
 
 
 # ── Main context builder ───────────────────────────────────────────────────────
@@ -298,7 +413,9 @@ def build_context() -> str:
 
 
 def main():
-    context = build_context()
+    briefing = get_briefing_with_cache()
+    create_daily_note_if_needed(briefing)
+    context  = build_context()
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
