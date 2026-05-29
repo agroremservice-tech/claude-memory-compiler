@@ -31,9 +31,6 @@ MAX_LOG_LINES     = 15
 KEYCRM_API_KEY = "OGU4MWY1MzFlNDAzZjU4NGMyNzM2MWUyNjFiZWEyYTM0ZWU0MDM5OA"
 KEYCRM_BASE    = "https://openapi.keycrm.app/v1"
 
-# All active statuses for NC block (pipeline 1)
-NC_STATUS_IDS = [1, 2, 189, 13, 38, 91, 158, 11, 37, 96, 68, 69, 70, 72, 88, 148, 59, 67]
-
 STATUS_NAMES = {
     1: "Новий",         2: "Інбокс",   13: "Аванс",
     38: "Рахунок",      91: "Виробництво",    158: "Нараховано",
@@ -96,13 +93,30 @@ def _fmt_date(d) -> str:
 
 # ── Briefing builder ───────────────────────────────────────────────────────────
 
-def build_briefing() -> str:
-    today = datetime.now(timezone.utc).astimezone().date()
+def _fmt_amount(amount) -> str:
+    if not amount:
+        return "—"
+    n = int(amount)
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}М"
+    if n >= 1000:
+        return f"{n // 1000}к"
+    return str(n)
 
-    # Fetch all active statuses in parallel (max 12 threads, 8s per request)
+
+def build_briefing() -> str:
+    today  = datetime.now(timezone.utc).astimezone().date()
+    cutoff = today - timedelta(days=14)
+
+    MONEY_SIDS   = [13, 38, 91]           # Нараховано (158) не включати
+    WATCH_SIDS   = [70, 37, 96]           # КП надіслано / переговори / фініш
+    CRITICAL_SID = 189
+    CALL_SIDS    = [1, 2, 11, 70, 37, 96, 68, 69, 72, 88, 148, 59, 67]
+    FETCH_IDS    = list(dict.fromkeys(MONEY_SIDS + WATCH_SIDS + [CRITICAL_SID] + CALL_SIDS))
+
     cards_by_status: dict[int, list] = {}
     with ThreadPoolExecutor(max_workers=12) as pool:
-        futs = {pool.submit(_fetch_status, sid): sid for sid in NC_STATUS_IDS}
+        futs = {pool.submit(_fetch_status, sid): sid for sid in FETCH_IDS}
         for fut in as_completed(futs, timeout=13):
             sid = futs[fut]
             try:
@@ -110,63 +124,107 @@ def build_briefing() -> str:
             except Exception:
                 cards_by_status[sid] = []
 
-    # Deduplicate across statuses
-    seen: set = set()
-    all_cards: list = []
-    for sid in NC_STATUS_IDS:
+    out = []
+
+    # ── 1. Гроші в роботі (Аванс / Рахунок / Виробництво) ────────────────
+    money_rows = []
+    for sid in MONEY_SIDS:
+        for c in cards_by_status.get(sid, []):
+            amount  = int(c.get("products_total") or 0)
+            abc     = _get_cf(c, "LD_1036")
+            contact = c.get("contact") or {}
+            name    = contact.get("full_name") or c.get("title") or f"#{c['id']}"
+            money_rows.append((amount, STATUS_NAMES.get(sid, ""), name, abc))
+    money_rows.sort(key=lambda x: -x[0])
+
+    out.append("### 💰 ГРОШІ В РОБОТІ\n")
+    if money_rows:
+        for amount, status_nm, name, abc in money_rows:
+            out.append(f"{name} | {status_nm} | {_fmt_amount(amount)} | {abc or '—'}")
+        out.append(f"РАЗОМ: {_fmt_amount(sum(r[0] for r in money_rows))}\n")
+    else:
+        out.append("Немає\n")
+
+    # ── 2. Топ воронки (A+B, КП надіслано / переговори / фініш) ──────────
+    watch_rows = []
+    seen_watch: set = set()
+    for sid in WATCH_SIDS:
         for c in cards_by_status.get(sid, []):
             cid = c.get("id")
-            if cid and cid not in seen:
-                seen.add(cid)
-                all_cards.append(c)
+            if cid in seen_watch:
+                continue
+            abc = _get_cf(c, "LD_1036") or ""
+            if abc not in ("A", "B"):
+                continue
+            seen_watch.add(cid)
+            amount  = int(c.get("products_total") or 0)
+            contact = c.get("contact") or {}
+            name    = contact.get("full_name") or c.get("title") or f"#{cid}"
+            nc_date = _parse_nc(c.get("communicate_at", ""))
+            watch_rows.append((-amount, name, STATUS_NAMES.get(sid, ""), amount, abc, nc_date))
+    watch_rows.sort()
 
-    # ── NC block: overdue or today ──────────────────────────────────────────
-    nc_cards = []
-    for c in all_cards:
-        nc_date = _parse_nc(c.get("communicate_at", ""))
-        if nc_date and nc_date <= today:
-            nc_cards.append((nc_date, c))
-    nc_cards.sort(key=lambda x: x[0])
-    nc_cards = nc_cards[:10]
-
-    out = []
-    out.append("### 📞 СЬОГОДНІ ТРЕБА ПОДЗВОНИТИ\n")
-    if not nc_cards:
-        out.append("Прострочених НК немає ✅")
+    out.append("### 🎯 ТОП ВОРОНКИ (A+B)\n")
+    if not watch_rows:
+        out.append("Немає\n")
     else:
-        for nc_date, c in nc_cards:
-            contact   = c.get("contact") or {}
-            name      = contact.get("full_name") or c.get("title") or f"#{c.get('id')}"
-            oblast    = _get_cf(c, "LD_1019")
-            status_nm = (c.get("status") or {}).get("title") or STATUS_NAMES.get(c.get("status_id"), "")
-            abc       = _get_cf(c, "LD_1036")
-            last      = (c.get("last_comment") or c.get("manager_comment") or "")[:60]
-            pfx       = "⚠️ " if nc_date < today else ""
-            out.append(
-                f"{pfx}{name} | {oblast or '—'} | {status_nm} | {abc or '—'}"
-                f" | НК: {_fmt_date(nc_date)} | {last or '—'}"
-            )
+        for _, name, status_nm, amount, abc, nc_date in watch_rows[:10]:
+            out.append(f"{name} | {_fmt_amount(amount)} | {status_nm} | {abc} | НК: {_fmt_date(nc_date)}")
+        out.append("")
 
-    out.append("")
+    # ── 3. Дзвонити сьогодні (НК <= сьогодні, >= cutoff) ─────────────────
+    call_rows = []
+    seen_ids: set = set()
+    for sid in CALL_SIDS:
+        for c in cards_by_status.get(sid, []):
+            cid = c.get("id")
+            if cid in seen_ids:
+                continue
+            nc_date = _parse_nc(c.get("communicate_at", ""))
+            if nc_date and cutoff <= nc_date <= today:
+                seen_ids.add(cid)
+                amount    = int(c.get("products_total") or 0)
+                abc       = _get_cf(c, "LD_1036") or ""
+                abc_order = {"A": 0, "B": 1, "C": 2}.get(abc, 3)
+                contact   = c.get("contact") or {}
+                name      = contact.get("full_name") or c.get("title") or f"#{cid}"
+                status_nm = STATUS_NAMES.get(sid, "")
+                pfx       = "⚠️ " if nc_date < today else ""
+                call_rows.append((abc_order, -amount, nc_date, pfx, name, amount, status_nm, abc))
+    call_rows.sort(key=lambda x: (x[0], x[1], x[2]))
 
-    # ── Status blocks (A/B/C, NC ≤ today or no NC) ─────────────────────────
-    def status_block(sids: list, header: str) -> list:
-        rows = []
-        for sid in sids:
-            for c in cards_by_status.get(sid, []):
-                nc_date = _parse_nc(c.get("communicate_at", ""))
-                if nc_date is None or nc_date <= today:
-                    contact = c.get("contact") or {}
-                    phone   = contact.get("phone") or "—"
-                    rows.append(
-                        f"{c.get('id')} | {STATUS_NAMES.get(sid, '')} "
-                        f"| {c.get('title', '')} | {phone} | {_fmt_date(nc_date)}"
-                    )
-        return [header, "\n".join(rows) if rows else "немає", ""]
+    a_rows  = [r for r in call_rows if r[0] == 0][:10]
+    bc_rows = [r for r in call_rows if r[0] != 0][:10]
 
-    out.extend(status_block([1, 2],             "### 🆕 Нові та Інбокс"))
-    out.extend(status_block([189],              "### 🚨 Критичний дзвінок"))
-    out.extend(status_block([13, 38, 91, 158],  "### 🏁 Фінальна стадія"))
+    out.append("### 📞 ДЗВОНИТИ СЬОГОДНІ\n")
+    if not call_rows:
+        out.append("НК немає ✅\n")
+    else:
+        if a_rows:
+            out.append("A:")
+            for _, neg_amt, nc_date, pfx, name, amount, status_nm, abc in a_rows:
+                out.append(f"{pfx}{name} | {_fmt_amount(amount)} | {status_nm} | {_fmt_date(nc_date)}")
+            out.append("")
+        if bc_rows:
+            out.append("B/C:")
+            for _, neg_amt, nc_date, pfx, name, amount, status_nm, abc in bc_rows:
+                out.append(f"{pfx}{name} | {_fmt_amount(amount)} | {status_nm} | {abc or '—'} | {_fmt_date(nc_date)}")
+        out.append("")
+
+    # ── 4. Критичні ───────────────────────────────────────────────────────
+    critical = cards_by_status.get(CRITICAL_SID, [])
+    out.append("### 🔥 КРИТИЧНІ\n")
+    if not critical:
+        out.append("Немає ✅\n")
+    else:
+        for c in critical:
+            contact = c.get("contact") or {}
+            name    = contact.get("full_name") or c.get("title") or f"#{c['id']}"
+            amount  = int(c.get("products_total") or 0)
+            nc_date = _parse_nc(c.get("communicate_at", ""))
+            abc     = _get_cf(c, "LD_1036")
+            out.append(f"{name} | {_fmt_amount(amount)} | НК: {_fmt_date(nc_date)} | {abc or '—'}")
+        out.append("")
 
     return "\n".join(out)
 
