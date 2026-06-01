@@ -441,11 +441,24 @@ def create_daily_note_if_needed(briefing: str) -> None:
     na_potim_rest   = [t for t in buckets.get("на_потім", []) if not _is_today_potim(t, today_ddmm)]
     na_zavtra       = buckets.get("на_завтра", []) + na_zavtra_extra
 
+    # Витягти Топ-5 з брифу
+    top5_items, in_top5 = [], False
+    for ln in briefing.splitlines():
+        if "ТОП-5 НА СЬОГОДНІ" in ln:
+            in_top5 = True
+            continue
+        if in_top5 and ln.startswith("###"):
+            break
+        if in_top5 and ln.strip() and ln[0].isdigit():
+            top5_items.append(ln.rstrip())
+    if not top5_items:
+        top5_items = ["1. 🚨 ", "2. 🚨 ", "3. ", "4. ", "5. "]
+
     lines = [
         f"# 📅 {today_str} — {day_name}", "",
         "---", "",
         "## 🔥 Топ-5 на сьогодні", "",
-        "1. 🚨 ", "2. 🚨 ", "3. ", "4. ", "5. ", "",
+        *top5_items, "",
         "---", "",
         "## 📞 ДЗВІНКИ", "",
         "### 💰 Великий чек + критична готовність",
