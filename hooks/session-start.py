@@ -32,12 +32,14 @@ KEYCRM_API_KEY = "OGU4MWY1MzFlNDAzZjU4NGMyNzM2MWUyNjFiZWEyYTM0ZWU0MDM5OA"
 KEYCRM_BASE    = "https://openapi.keycrm.app/v1"
 
 STATUS_NAMES = {
-    1: "Новий",         2: "Інбокс",   13: "Аванс",
-    38: "Рахунок",      91: "Виробництво",    158: "Нараховано",
-    189: "Критичний",   11: "КП підготовка",  37: "КП переговори",
-    96: "КП фініш",     68: "Фото/ТЗ",        69: "Інфо Агрорем",
-    70: "КП надіслано", 72: "КП пауза",       88: "Перестав відп.",
-    148: "1 міс",       59: "Уточнення конт.", 67: "Зміна планів",
+    1: "Новий",          2: "Інбокс",        190: "Недозвон",
+    68: "Фото/ТЗ",       69: "Інфо Агрорем", 11: "КП підготовка",
+    70: "КП надіслано",  72: "КП пауза",     37: "КП переговори",
+    96: "КП фініш",      189: "Критичний",   38: "Рахунок",
+    13: "Аванс",         91: "Виробництво",  137: "Доставка/Монтаж",
+    92: "Доплата",       4: "Угода заверш.", 67: "Зміна планів",
+    9: "Купив у конк.",  24: "Вивчає ціни",  62: "Немає бюджету",
+    146: "Маркет.ВАЙБЕР", 147: "Маркет.СМС", 64: "Сервіс",
 }
 
 UA_DAYS = {
@@ -108,11 +110,12 @@ def build_briefing() -> str:
     today  = datetime.now(timezone.utc).astimezone().date()
     cutoff = today - timedelta(days=14)
 
-    MONEY_SIDS   = [13, 38, 91]           # Нараховано (158) не включати
-    WATCH_SIDS   = [70, 37, 96]           # КП надіслано / переговори / фініш
+    MONEY_SIDS   = [91, 137, 92]          # угоди укладені: Виробництво / Доставка/Монтаж / Доплата
+    EXIT_SIDS    = [13, 38, 96, 189]      # ліди на виході: Аванс / Рахунок / КП фініш / Критичний дзвінок
+    WATCH_SIDS   = [70, 37, 96]           # КП надіслано / переговори / фініш (для ТОП A+B)
     CRITICAL_SID = 189
-    CALL_SIDS    = [1, 2, 11, 70, 37, 96, 68, 69, 72, 88, 148, 59, 67]
-    FETCH_IDS    = list(dict.fromkeys(MONEY_SIDS + WATCH_SIDS + [CRITICAL_SID] + CALL_SIDS))
+    CALL_SIDS    = [1, 2, 11, 70, 37, 96, 68, 69, 72, 67, 24, 62, 9]
+    FETCH_IDS    = list(dict.fromkeys(MONEY_SIDS + EXIT_SIDS + WATCH_SIDS + [CRITICAL_SID] + CALL_SIDS))
 
     cards_by_status: dict[int, list] = {}
     with ThreadPoolExecutor(max_workers=12) as pool:
@@ -126,7 +129,7 @@ def build_briefing() -> str:
 
     out = []
 
-    # ── 1. Гроші в роботі (Аванс / Рахунок / Виробництво) ────────────────
+    # ── 1. Гроші в роботі (Виробництво / Доставка/Монтаж / Доплата) ──────
     money_rows = []
     for sid in MONEY_SIDS:
         for c in cards_by_status.get(sid, []):
@@ -145,7 +148,27 @@ def build_briefing() -> str:
     else:
         out.append("Немає\n")
 
-    # ── 2. Топ воронки (A+B, КП надіслано / переговори / фініш) ──────────
+    # ── 2. На виході (Аванс / Рахунок / КП фініш / Критичний дзвінок) ───
+    exit_rows = []
+    for sid in EXIT_SIDS:
+        for c in cards_by_status.get(sid, []):
+            amount  = int(c.get("products_total") or 0)
+            abc     = _get_cf(c, "LD_1036")
+            contact = c.get("contact") or {}
+            name    = contact.get("full_name") or c.get("title") or f"#{c['id']}"
+            nc_date = _parse_nc(c.get("communicate_at", ""))
+            exit_rows.append((amount, sid, STATUS_NAMES.get(sid, ""), name, abc, nc_date))
+    exit_rows.sort(key=lambda x: -x[0])
+
+    out.append("### 🚀 НА ВИХОДІ\n")
+    if exit_rows:
+        for amount, sid_, status_nm, name, abc, nc_date in exit_rows:
+            out.append(f"{name} | {status_nm} | {_fmt_amount(amount)} | {abc or '—'}")
+        out.append(f"РАЗОМ: {_fmt_amount(sum(r[0] for r in exit_rows))}\n")
+    else:
+        out.append("Немає\n")
+
+    # ── 4. Топ воронки (A+B, КП надіслано / переговори / фініш) ──────────
     watch_rows = []
     seen_watch: set = set()
     for sid in WATCH_SIDS:
@@ -172,7 +195,7 @@ def build_briefing() -> str:
             out.append(f"{name} | {_fmt_amount(amount)} | {status_nm} | {abc} | НК: {_fmt_date(nc_date)}")
         out.append("")
 
-    # ── 3. Дзвонити сьогодні (НК <= сьогодні, >= cutoff) ─────────────────
+    # ── 5. Дзвонити сьогодні (НК <= сьогодні, >= cutoff) ─────────────────
     call_rows = []
     seen_ids: set = set()
     for sid in CALL_SIDS:
@@ -196,6 +219,35 @@ def build_briefing() -> str:
     a_rows  = [r for r in call_rows if r[0] == 0][:10]
     bc_rows = [r for r in call_rows if r[0] != 0][:10]
 
+    # ── Топ-5 (будується з усіх даних, вставляється на початок) ──────
+    top5_pool = []  # (priority, neg_amount, label)
+
+    # P0: Критичний дзвінок (189) — найгарячіші
+    for amount, sid_, status_nm, name, abc, nc_date in exit_rows:
+        if sid_ == 189:
+            top5_pool.append((0, -amount, f"🚨 {name} | Критичний | {_fmt_amount(amount)}"))
+
+    # P1: Аванс (13) — чекаємо оплату
+    for amount, sid_, status_nm, name, abc, nc_date in exit_rows:
+        if sid_ == 13:
+            top5_pool.append((1, -amount, f"💰 {name} | Аванс | {_fmt_amount(amount)}"))
+
+    # P2: Рахунок (38) — підписання договору
+    for amount, sid_, status_nm, name, abc, nc_date in exit_rows:
+        if sid_ == 38:
+            top5_pool.append((2, -amount, f"📄 {name} | Рахунок | {_fmt_amount(amount)}"))
+
+    # P3: Прострочені дзвінки (⚠️) відсортовані по сумі
+    for _, neg_amt, nc_date, pfx, name, amount, status_nm, abc in call_rows:
+        if pfx == "⚠️ ":
+            top5_pool.append((3, neg_amt, f"⚠️ {name} | {status_nm} | {_fmt_amount(amount)}"))
+
+    top5_pool.sort(key=lambda x: (x[0], x[1]))
+    top5_lines = [f"{i}. {label}" for i, (_, _, label) in enumerate(top5_pool[:5], 1)]
+
+    top5_section = ["### 🔥 ТОП-5 НА СЬОГОДНІ\n"] + top5_lines + ["\n"]
+    out = top5_section + out
+
     out.append("### 📞 ДЗВОНИТИ СЬОГОДНІ\n")
     if not call_rows:
         out.append("НК немає ✅\n")
@@ -211,7 +263,7 @@ def build_briefing() -> str:
                 out.append(f"{pfx}{name} | {_fmt_amount(amount)} | {status_nm} | {abc or '—'} | {_fmt_date(nc_date)}")
         out.append("")
 
-    # ── 4. Критичні ───────────────────────────────────────────────────────
+    # ── 6. Критичні ───────────────────────────────────────────────────────
     critical = cards_by_status.get(CRITICAL_SID, [])
     out.append("### 🔥 КРИТИЧНІ\n")
     if not critical:
