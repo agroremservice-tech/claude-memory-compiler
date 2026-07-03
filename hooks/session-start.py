@@ -489,9 +489,6 @@ def create_daily_note_if_needed(briefing: str) -> None:
         _blk(na_potim_rest), "",
         "---", "",
         "## 📝 Нотатки за день", "",
-        "---", "",
-        "## 📊 Бриф воронки", "",
-        briefing,
     ]
 
     try:
@@ -510,11 +507,22 @@ def build_context() -> str:
     today = datetime.now(timezone.utc).astimezone()
     parts.append(f"## Today\n{today.strftime('%A, %B %d, %Y')}")
 
-    # Daily briefing first — most time-sensitive, must not be truncated
+    # Daily briefing — тільки Top-5, повний бриф за командою `бриф`
     try:
         briefing = get_briefing_with_cache()
         if briefing:
-            parts.append(f"## 📊 Бриф воронки\n\n{briefing}")
+            top5_lines, in_top5 = [], False
+            for ln in briefing.splitlines():
+                if "ТОП-5 НА СЬОГОДНІ" in ln:
+                    in_top5 = True
+                    continue
+                if in_top5 and ln.startswith("###"):
+                    break
+                if in_top5 and ln.strip():
+                    top5_lines.append(ln.rstrip())
+            top5_text = "\n".join(top5_lines).strip()
+            if top5_text:
+                parts.append(f"## 🔥 Топ-5 сьогодні\n\n{top5_text}")
     except Exception:
         pass  # network down or API error — skip silently
 

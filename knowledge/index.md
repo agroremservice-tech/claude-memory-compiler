@@ -5,7 +5,7 @@
 | [[concepts/claude-code-hooks-windows-execution]] | Claude Code runs hooks via Git Bash on Windows; backslash paths silently fail | daily/2026-05-06.md | 2026-05-06 |
 | [[concepts/sessionend-hook-debugging]] | Sentinel-file approach to diagnose whether SessionEnd hooks are firing at all | daily/2026-05-06.md | 2026-05-06 |
 | [[concepts/windows-path-forward-slash-git-bash]] | Forward slashes are the safe cross-context path format on Windows for Git Bash and Python | daily/2026-05-06.md | 2026-05-06 |
-| [[concepts/keycrm-mcp-get-lead-notes-fix]] | get_lead_notes was broken; fix uses GET /communications/comments/lead/{id} with user session token | daily/2026-05-06.md | 2026-05-15 |
+| [[concepts/keycrm-mcp-get-lead-notes-fix]] | get_lead_notes was broken; fix uses GET /communications/comments/lead/{id}; MCP reload via taskkill /F /IM node.exe | daily/2026-05-06.md | 2026-06-12 |
 | [[concepts/keycrm-pipeline-specific-statuses]] | Status codes are pipeline-bound; wrong status silently transfers a lead to another pipeline | daily/2026-05-06.md | 2026-05-19 |
 | [[concepts/keycrm-raw-record-processing-algorithm]] | Structured algorithm: comment → daily note → one-frame confirmation block → follow-up with deadlines | daily/2026-05-06.md | 2026-05-15 |
 | [[concepts/viber-message-proactive-closing]] | Most Viber messages end with a proactive call announcement; exception: after contract + invoice, end with a direct CTA | daily/2026-05-06.md | 2026-05-19 |
@@ -25,7 +25,7 @@
 | [[concepts/keycrm-daily-funnel-brief]] | 4-block brief: Гроші в роботі (excl. Нараховано), ТОП ВОРОНКИ (A+B at-risk), Дзвонити сьогодні, Критичні; limit 10/block | daily/2026-05-21.md | 2026-05-29 |
 | [[concepts/keycrm-abc-score-update-sequence]] | Update status before calling update_card_fields; ABC calculated against old status if sequence is reversed | daily/2026-05-25.md | 2026-05-26 |
 | [[concepts/keycrm-intermediary-contact-handling]] | Leads from an intermediary (посередник) go to status 59 (Уточнення контакту), not 2 (Ідентифікація) | daily/2026-05-25.md | 2026-05-26 |
-| [[concepts/keycrm-seasonal-lead-parking]] | Agricultural season (harvest, sowing) gates deals; park at status 148/72 with NC after season end | daily/2026-05-25.md | 2026-05-26 |
+| [[concepts/keycrm-seasonal-lead-parking]] | Agricultural season gates deals → КП пауза (72/148); long-term deferral with intact intent → КП пауза, not Зміна планів | daily/2026-05-25.md | 2026-06-11 |
 | [[concepts/keycrm-client-requisites-invoice-trigger]] | Client proactively sending bank requisites signals payment readiness; jump directly to Рахунок (38), skip intermediate stages | daily/2026-05-25.md | 2026-05-26 |
 | [[concepts/keycrm-tz-document-control]] | When client commits to sending a ТЗ, create a document control task with NC on expected delivery date | daily/2026-05-25.md | 2026-05-26 |
 | [[concepts/keycrm-mcp-get-card-raw-duplicate-response]] | get_card_raw returns card + internalCard as a full duplicate; at 65 calls/day this drives ~130K tokens in briefing | daily/2026-05-26.md | 2026-05-26 |
@@ -36,3 +36,12 @@
 | [[concepts/keycrm-non-responsive-lead-criteria]] | Status 88 threshold: 12+ days silence + call unanswered → send reactivation ВП first, then close as non-responsive if no reply | daily/2026-05-28.md | 2026-05-29 |
 | [[concepts/keycrm-pipeline-stage-semantics]] | Рахунок=договір+реквізити, Аванс=рахунок виставлено, Виробництво=аванс зайшов; Маркетинг ВАЙБЕР/СМС — відмова з потенціалом (вайбер/без) | session/2026-06-02 | 2026-06-02 |
 | [[concepts/powershell-utf8-file-handling]] | Get-Content без кодування ламає кирилицю; використовувати [System.IO.File]::ReadAllText/WriteAllText з UTF8 | session/2026-06-02 | 2026-06-02 |
+| [[concepts/keycrm-zamitka-mcp-limitation]] | add_note writes to comments, not the Замітка field; update_lead lacks a Замітка param — checklist workaround via comments until MCP is patched | daily/2026-06-02.md | 2026-06-02 |
+| [[concepts/keycrm-competitor-kp-counter-respec]] | Client submitting competitor's KP is a buying signal; respec to client's own ТЗ, not the competitor's configuration | daily/2026-06-02.md | 2026-06-02 |
+| [[concepts/keycrm-skill-file-status-bugs]] | Wrong status IDs baked into skill files cause silent CRM errors; skill files are the single source of truth, not memory | daily/2026-06-10.md | 2026-06-10 |
+| [[concepts/keycrm-rgs-prk-vp-template]] | РГС+ПРК Viber proposal template: котушка, сума без знижки, гарантія 18 міс, документи ліцензії as separate closing block | daily/2026-06-11.md | 2026-06-11 |
+| [[concepts/keycrm-update-card-fields-404-error]] | update_card_fields returns 404 on some leads, silently failing to write ОБЛАСТЬ/Обʼєм/АВС custom fields | daily/2026-06-11.md | 2026-06-11 |
+| [[concepts/keycrm-kdz-vs-kp-pauza-licensing-pause]] | Client-initiated pause → КДЗ (189); manager-scheduled wait → КП пауза (72); distinction determines brief visibility | daily/2026-06-11.md | 2026-06-11 |
+| [[concepts/keycrm-mcp-update-lead-title]] | update_lead lacks title by default; add title param to index.js + taskkill node.exe to reload MCP | daily/2026-06-12.md | 2026-06-12 |
+| [[concepts/keycrm-lead-naming-convention]] | Template: ПІДПРИЄМСТВО CAPS * Локація * Продукт * Ім'я * +телефон; periodic audit renames auto-created cards | daily/2026-06-12.md | 2026-06-12 |
+| [[concepts/keycrm-facebook-lead-data-gaps]] | Facebook leads often arrive without phone in CRM card; check notes/comments before renaming or processing | daily/2026-06-12.md | 2026-06-12 |

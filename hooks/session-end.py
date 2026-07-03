@@ -19,11 +19,6 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Recursion guard: if we were spawned by flush.py (which calls Agent SDK,
-# which runs Claude Code, which would fire this hook again), exit immediately.
-if os.environ.get("CLAUDE_INVOKED_BY"):
-    sys.exit(0)
-
 ROOT = Path(__file__).resolve().parent.parent
 DAILY_DIR = ROOT / "daily"
 SCRIPTS_DIR = ROOT / "scripts"
@@ -35,6 +30,20 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [hook] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+# Raw beacon — written before any other logic so we can verify invocation
+_beacon = SCRIPTS_DIR / "session-end-invoked.txt"
+try:
+    with open(_beacon, "a", encoding="utf-8") as _f:
+        _f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} pid={os.getpid()} argv={sys.argv}\n")
+except Exception:
+    pass
+
+# Recursion guard: if we were spawned by flush.py (which calls Agent SDK,
+# which runs Claude Code, which would fire this hook again), exit immediately.
+if os.environ.get("CLAUDE_INVOKED_BY"):
+    logging.info("SKIP: CLAUDE_INVOKED_BY is set — recursion guard triggered")
+    sys.exit(0)
 
 MAX_TURNS = 30
 MAX_CONTEXT_CHARS = 15_000
@@ -92,18 +101,29 @@ def extract_conversation_context(transcript_path: Path) -> tuple[str, int]:
 
 
 def main() -> None:
-    # Read hook input from stdin
-    # Claude Code on Windows may pass paths with unescaped backslashes
+    # Read hook input from stdin.
+    # Use buffer.read() on Windows to avoid text-mode encoding issues.
     try:
-        raw_input = sys.stdin.read()
-        try:
-            hook_input: dict = json.loads(raw_input)
-        except json.JSONDecodeError:
-            fixed_input = re.sub(r'(?<!\\)\\(?!["\\])', r'\\\\', raw_input)
-            hook_input = json.loads(fixed_input)
-    except (json.JSONDecodeError, ValueError, EOFError) as e:
-        logging.error("Failed to parse stdin: %s", e)
+        raw_bytes = sys.stdin.buffer.read()
+        raw_input = raw_bytes.decode("utf-8-sig", errors="replace").strip()
+    except Exception as e:
+        logging.error("Failed to read stdin: %s", e)
         return
+
+    if not raw_input:
+        logging.info("SKIP: empty stdin (hook fired with no data)")
+        return
+
+    try:
+        hook_input: dict = json.loads(raw_input)
+    except json.JSONDecodeError:
+        # Claude Code on Windows may pass paths with unescaped backslashes
+        fixed_input = re.sub(r'(?<!\\)\\(?!["\\])', r'\\\\', raw_input)
+        try:
+            hook_input = json.loads(fixed_input)
+        except json.JSONDecodeError as e:
+            logging.error("Failed to parse stdin: %s | raw: %r", e, raw_input[:300])
+            return
 
     session_id = hook_input.get("session_id", "unknown")
     source = hook_input.get("source", "unknown")

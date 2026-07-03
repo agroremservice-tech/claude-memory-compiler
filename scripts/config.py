@@ -19,9 +19,6 @@ INDEX_FILE = KNOWLEDGE_DIR / "index.md"
 LOG_FILE = KNOWLEDGE_DIR / "log.md"
 STATE_FILE = SCRIPTS_DIR / "state.json"
 
-# ── Timezone ───────────────────────────────────────────────────────────
-TIMEZONE = "America/Chicago"
-
 
 def now_iso() -> str:
     """Current time in ISO 8601 format."""
