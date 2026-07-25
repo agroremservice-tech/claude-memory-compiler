@@ -53,6 +53,30 @@ def save_flush_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state), encoding="utf-8")
 
 
+LOCK_STALE_SECONDS = 120
+
+
+def acquire_session_lock(session_id: str) -> Path | None:
+    """Atomically claim a per-session lock file so duplicate hook fires
+    (e.g. Windows double-firing SessionEnd) can't spawn two concurrent
+    CLI subprocesses for the same session. Returns the lock path on
+    success, or None if another process already holds it."""
+    lock_file = SCRIPTS_DIR / f"flush-lock-{session_id}.lock"
+    try:
+        fd = os.open(str(lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+        return lock_file
+    except FileExistsError:
+        try:
+            age = time.time() - lock_file.stat().st_mtime
+        except OSError:
+            age = LOCK_STALE_SECONDS + 1
+        if age > LOCK_STALE_SECONDS:
+            lock_file.unlink(missing_ok=True)
+            return acquire_session_lock(session_id)
+        return None
+
+
 def append_to_daily_log(content: str, section: str = "Session") -> None:
     """Append content to today's daily log."""
     today = datetime.now(timezone.utc).astimezone()
@@ -116,6 +140,9 @@ respond with exactly: FLUSH_OK
 
     response = ""
 
+    def _log_cli_stderr(line: str) -> None:
+        logging.error("[claude-cli stderr] %s", line)
+
     try:
         async for message in query(
             prompt=prompt,
@@ -123,6 +150,7 @@ respond with exactly: FLUSH_OK
                 cwd=str(ROOT),
                 allowed_tools=[],
                 max_turns=2,
+                stderr=_log_cli_stderr,
             ),
         ):
             if isinstance(message, AssistantMessage):
@@ -213,42 +241,55 @@ def main():
         context_file.unlink(missing_ok=True)
         return
 
-    # Read pre-extracted context
-    context = context_file.read_text(encoding="utf-8").strip()
-    if not context:
-        logging.info("Context file is empty, skipping")
+    # Concurrency guard: Windows sometimes fires the triggering hook twice
+    # for the same session, which used to spawn two flush.py processes that
+    # raced to launch the CLI subprocess simultaneously. Claim a per-session
+    # lock before doing any real work so only one wins.
+    lock_file = acquire_session_lock(session_id)
+    if lock_file is None:
+        logging.info("Skipping concurrent flush for session %s (lock held)", session_id)
         context_file.unlink(missing_ok=True)
         return
 
-    logging.info("Flushing session %s: %d chars", session_id, len(context))
+    try:
+        # Read pre-extracted context
+        context = context_file.read_text(encoding="utf-8").strip()
+        if not context:
+            logging.info("Context file is empty, skipping")
+            context_file.unlink(missing_ok=True)
+            return
 
-    # Run the LLM extraction
-    response = asyncio.run(run_flush(context))
+        logging.info("Flushing session %s: %d chars", session_id, len(context))
 
-    # Append to daily log
-    if "FLUSH_OK" in response:
-        logging.info("Result: FLUSH_OK")
-        append_to_daily_log(
-            "FLUSH_OK - Nothing worth saving from this session", "Memory Flush"
-        )
-    elif "FLUSH_ERROR" in response:
-        logging.error("Result: %s", response)
-        append_to_daily_log(response, "Memory Flush")
-    else:
-        logging.info("Result: saved to daily log (%d chars)", len(response))
-        append_to_daily_log(response, "Session")
+        # Run the LLM extraction
+        response = asyncio.run(run_flush(context))
 
-    # Update dedup state
-    save_flush_state({"session_id": session_id, "timestamp": time.time()})
+        # Append to daily log
+        if "FLUSH_OK" in response:
+            logging.info("Result: FLUSH_OK")
+            append_to_daily_log(
+                "FLUSH_OK - Nothing worth saving from this session", "Memory Flush"
+            )
+        elif "FLUSH_ERROR" in response:
+            logging.error("Result: %s", response)
+            append_to_daily_log(response, "Memory Flush")
+        else:
+            logging.info("Result: saved to daily log (%d chars)", len(response))
+            append_to_daily_log(response, "Session")
 
-    # Clean up context file
-    context_file.unlink(missing_ok=True)
+        # Update dedup state
+        save_flush_state({"session_id": session_id, "timestamp": time.time()})
 
-    # End-of-day auto-compilation: if it's past the compile hour and today's
-    # log hasn't been compiled yet, trigger compile.py in the background.
-    maybe_trigger_compilation()
+        # Clean up context file
+        context_file.unlink(missing_ok=True)
 
-    logging.info("Flush complete for session %s", session_id)
+        # End-of-day auto-compilation: if it's past the compile hour and today's
+        # log hasn't been compiled yet, trigger compile.py in the background.
+        maybe_trigger_compilation()
+
+        logging.info("Flush complete for session %s", session_id)
+    finally:
+        lock_file.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
