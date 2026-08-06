@@ -417,6 +417,28 @@ def _blk(tasks: list, fallback: str = "- [ ] ") -> str:
     return "\n".join(tasks) if tasks else fallback
 
 
+def _age_internal_tasks(tasks: list, today: date) -> list:
+    """Prefix internal task lines with ⚠️ if their DD.MM date tag is 2+ days old."""
+    out = []
+    for line in tasks:
+        if "⚠️" in line:
+            out.append(line)
+            continue
+        m = re.search(r"\[ \]\s*(\d{2})\.(\d{2})\s*[—-]", line)
+        if m:
+            try:
+                d, mo = int(m.group(1)), int(m.group(2))
+                tagged = date(today.year, mo, d)
+                if tagged > today:
+                    tagged = date(today.year - 1, mo, d)
+                if (today - tagged).days >= 2:
+                    line = line.replace("- [ ]", "- [ ] ⚠️", 1)
+            except ValueError:
+                pass
+        out.append(line)
+    return out
+
+
 def create_daily_note_if_needed(briefing: str) -> None:
     """Auto-create today's Inbox daily note with carry-over tasks + briefing."""
     now       = datetime.now(timezone.utc).astimezone()
@@ -476,7 +498,7 @@ def create_daily_note_if_needed(briefing: str) -> None:
         "---", "",
         "## 📋 ЗАДАЧІ", "",
         "### 🔧 Внутрішні / підрядники",
-        _blk(buckets.get("внутр",     [])), "",
+        _blk(_age_internal_tasks(buckets.get("внутр", []), today)), "",
         "### 📄 КП / договори / документи",
         _blk(buckets.get("кп_doc",    [])), "",
         "### 💰 Фінанси / Адмін",

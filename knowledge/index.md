@@ -12,8 +12,8 @@
 | [[concepts/keycrm-post-delivery-payment-clients]] | Clients refusing prepayment require a separate track: park at status 148, return when stock available | daily/2026-05-06.md | 2026-05-06 |
 | [[concepts/rgs-advance-document-preparation]] | RGS passport and calibration table can be prepared before tank completion to accelerate client licensing | daily/2026-05-06.md | 2026-05-06 |
 | [[concepts/tender-gated-lead-management]] | B2B leads in active internal tenders must be parked until tender result + signed contract received | daily/2026-05-13.md | 2026-05-19 |
-| [[concepts/multi-variant-kp-price-anchoring]] | Present 3 equipment variants without total sum; frame mandatory accessories as expert recommendations | daily/2026-05-13.md | 2026-05-19 |
-| [[concepts/vialon-fuel-identification-upsell]] | Vialon fuel ID system (36k ПДВ) adds card-blocking, mobile control, and monthly reports to AZS proposals | daily/2026-05-13.md | 2026-05-19 |
+| [[concepts/multi-variant-kp-price-anchoring]] | Present 2–3 equipment variants without total sum; optional items go in separate add-ons block; deadline discount applies to all variants | daily/2026-05-13.md | 2026-06-16 |
+| [[concepts/vialon-fuel-identification-upsell]] | Vialon fuel ID system (36k ПДВ) adds card-blocking, mobile control, and monthly reports; in multi-variant КPs goes in "Додатково" block | daily/2026-05-13.md | 2026-06-16 |
 | [[concepts/keycrm-competitor-loss-closure]] | Close as status 9 when client confirms competitor purchase; record contact for future re-engagement | daily/2026-05-14.md | 2026-05-19 |
 | [[concepts/keycrm-pre-kp-spec-clarification]] | Delegate spec/price check internally before sending KP when client requirement is non-standard | daily/2026-05-14.md | 2026-05-19 |
 | [[concepts/keycrm-overdue-nc-recovery]] | Re-read brief and update NC to nearest date when next-contact date has passed without a call | daily/2026-05-14.md | 2026-05-19 |
@@ -35,13 +35,26 @@
 | [[concepts/keycrm-silent-lead-vp-template]] | Viber reactivation template for unreachable clients: "Намагались додзвонитись / [reference] / Актуально ще чи вже вирішили питання?" | daily/2026-05-28.md | 2026-05-29 |
 | [[concepts/keycrm-non-responsive-lead-criteria]] | Status 88 threshold: 12+ days silence + call unanswered → send reactivation ВП first, then close as non-responsive if no reply | daily/2026-05-28.md | 2026-05-29 |
 | [[concepts/keycrm-pipeline-stage-semantics]] | Рахунок=договір+реквізити, Аванс=рахунок виставлено, Виробництво=аванс зайшов; Маркетинг ВАЙБЕР/СМС — відмова з потенціалом (вайбер/без) | session/2026-06-02 | 2026-06-02 |
+| [[concepts/keycrm-deal-checklist]] | Живий чеклист угоди в полі "Замітка" картки (manager_comment); формат позначок ✅/⬜/⏳ по кожному переходу статусу; manager_comment ще не підтримується update_lead | session/2026-06-02 | 2026-06-02 |
 | [[concepts/powershell-utf8-file-handling]] | Get-Content без кодування ламає кирилицю; використовувати [System.IO.File]::ReadAllText/WriteAllText з UTF8 | session/2026-06-02 | 2026-06-02 |
 | [[concepts/keycrm-zamitka-mcp-limitation]] | add_note writes to comments, not the Замітка field; update_lead lacks a Замітка param — checklist workaround via comments until MCP is patched | daily/2026-06-02.md | 2026-06-02 |
 | [[concepts/keycrm-competitor-kp-counter-respec]] | Client submitting competitor's KP is a buying signal; respec to client's own ТЗ, not the competitor's configuration | daily/2026-06-02.md | 2026-06-02 |
-| [[concepts/keycrm-skill-file-status-bugs]] | Wrong status IDs baked into skill files cause silent CRM errors; skill files are the single source of truth, not memory | daily/2026-06-10.md | 2026-06-10 |
+| [[concepts/keycrm-skill-file-status-bugs]] | Wrong status IDs and wrong API call ordering in skill files cause silent CRM errors; audit scope expanded in July 2026 | daily/2026-06-10.md, daily/2026-07-17.md | 2026-07-17 |
 | [[concepts/keycrm-rgs-prk-vp-template]] | РГС+ПРК Viber proposal template: котушка, сума без знижки, гарантія 18 міс, документи ліцензії as separate closing block | daily/2026-06-11.md | 2026-06-11 |
 | [[concepts/keycrm-update-card-fields-404-error]] | update_card_fields returns 404 on some leads, silently failing to write ОБЛАСТЬ/Обʼєм/АВС custom fields | daily/2026-06-11.md | 2026-06-11 |
 | [[concepts/keycrm-kdz-vs-kp-pauza-licensing-pause]] | Client-initiated pause → КДЗ (189); manager-scheduled wait → КП пауза (72); distinction determines brief visibility | daily/2026-06-11.md | 2026-06-11 |
 | [[concepts/keycrm-mcp-update-lead-title]] | update_lead lacks title by default; add title param to index.js + taskkill node.exe to reload MCP | daily/2026-06-12.md | 2026-06-12 |
 | [[concepts/keycrm-lead-naming-convention]] | Template: ПІДПРИЄМСТВО CAPS * Локація * Продукт * Ім'я * +телефон; periodic audit renames auto-created cards | daily/2026-06-12.md | 2026-06-12 |
 | [[concepts/keycrm-facebook-lead-data-gaps]] | Facebook leads often arrive without phone in CRM card; check notes/comments before renaming or processing | daily/2026-06-12.md | 2026-06-12 |
+| [[concepts/keycrm-kp-optional-addons-block]] | Optional items (Vialon, котушка) go in "Додатково можемо запропонувати" block — never folded into the main KP total | daily/2026-06-16.md | 2026-06-16 |
+| [[concepts/keycrm-deadline-discount-anchor]] | Apply 3–5% discount until a near-term date on all KP variants as an urgency anchor; deadline becomes the follow-up call hook | daily/2026-06-16.md | 2026-06-16 |
+| [[concepts/keycrm-abc-amount-field-mismatch]] | `update_card_fields` read `products_total` instead of `amount`, causing ABC deal-size to always score 0; fixed June 2026 | daily/2026-06-25.md | 2026-06-25 |
+| [[concepts/claude-md-maintenance-workflow]] | Periodic audit of session logs to identify gaps in CLAUDE.md; batch-confirm changes; backup before applying | daily/2026-06-25.md | 2026-06-25 |
+| [[concepts/keycrm-vp-chain-multi-variant]] | Send sequential VP messages for multi-fuel-type leads: per-fuel ТТХ → works list → add-ons → confirmation VP after KP | daily/2026-07-02.md | 2026-07-02 |
+| [[concepts/keycrm-card-location-mismatch]] | Card title city vs comment city mismatch: flag, defer ОБЛАСТЬ update, verify on next call | daily/2026-07-02.md | 2026-07-02 |
+| [[concepts/keycrm-vp-post-kp-decision-framing]] | Post-КП VP closing must name client's decision + next action, not describe the call process | daily/2026-07-07.md | 2026-07-08 |
+| [[concepts/keycrm-internal-task-daily-note-tracking]] | Task tool is ephemeral (session-only); persistent internal coordination goes in daily note "🔧 Внутрішні" with DD.MM prefix + ⚠️ aging | daily/2026-07-07.md | 2026-07-08 |
+| [[concepts/claude-code-cursor-bug-windows-terminal]] | Claude Code TUI forces block cursor on Windows Terminal; fix: two keys in cachedGrowthBookFeatures (`tengu_native_cursor: true` + `showSpinnerTree: false`) | daily/2026-07-08.md | 2026-07-08 |
+| [[concepts/anthropic-oauth-vs-api-key]] | `sk-ant-oat01` = OAuth subscription token (не API-ключ); `sk-ant-api03` = platform API key з console.anthropic.com — лише він підходить для сторонніх застосунків | daily/2026-07-17.md | 2026-07-17 |
+| [[concepts/vault-secrets-in-git-repos]] | Два паттерни витоку секретів: Bearer-токен у tracked Python-файлі; GitHub PAT у URL remote у `.git/config`; митигація — .env + .gitignore + SSH | daily/2026-07-17.md | 2026-07-17 |
+| [[concepts/anthropic-api-credit-mcp-cascade]] | HTTP 400 "credit balance too low" = вичерпані API-кредити; cascade-ефект вимикає MCP-сервер; taskkill не допомагає — потрібен повний перезапуск після поповнення | daily/2026-07-17.md | 2026-07-17 |
