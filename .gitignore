@@ -26,6 +26,9 @@ scripts/uv.lock
 # Claude Code local settings
 .claude/settings.local.json
 
+# Secrets
+.env
+
 # OS files
 .DS_Store
 Thumbs.db

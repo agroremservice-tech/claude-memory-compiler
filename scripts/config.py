@@ -28,3 +28,24 @@ def now_iso() -> str:
 def today_iso() -> str:
     """Current date in ISO 8601 format."""
     return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")
+
+
+def load_env_file() -> None:
+    """Load KEY=VALUE pairs from .env into the environment (real env vars win)."""
+    import os
+
+    env_file = ROOT_DIR / ".env"
+    if not env_file.exists():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+load_env_file()

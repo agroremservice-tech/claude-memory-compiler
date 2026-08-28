@@ -23,6 +23,9 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from config import load_env_file
+load_env_file()
+
 ROOT = Path(__file__).resolve().parent.parent
 DAILY_DIR = ROOT / "daily"
 SCRIPTS_DIR = ROOT / "scripts"
@@ -162,7 +165,26 @@ respond with exactly: FLUSH_OK
     except Exception as e:
         import traceback
         logging.error("Agent SDK error: %s\n%s", e, traceback.format_exc())
-        response = f"FLUSH_ERROR: {type(e).__name__}: {e}"
+        # The inner CLI's own SessionEnd hook fires when this one-shot query
+        # finishes (it loads the same project/user hook config we do) and on
+        # Windows sometimes double-fires; the recursion guard in
+        # session-end.py no-ops it safely, but the SDK surfaces the resulting
+        # "Hook cancelled" event as a fatal exception here — AFTER the actual
+        # answer has usually already streamed in. Don't discard a real answer
+        # just because a harmless trailing hook event blew up the stream.
+        looks_like_error = any(
+            marker in response
+            for marker in ("Failed to authenticate", "OAuth access token", "API Error")
+        )
+        if response.strip() and not looks_like_error:
+            logging.info(
+                "Agent SDK error arrived after content was already received (%d chars) — keeping it",
+                len(response),
+            )
+        else:
+            if looks_like_error:
+                logging.error("Query itself failed (auth/API error), not a trailing hook glitch: %s", response.strip())
+            response = f"FLUSH_ERROR: {type(e).__name__}: {e}"
 
     return response
 
