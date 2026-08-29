@@ -27,3 +27,7 @@ Get-Content $file                     # читає як CP1252
 $lines | Out-File $file               # пише як UTF-16 LE
 $lines | Out-File $file -Encoding utf8  # BOM + неправильне читання якщо Get-Content був без кодування
 ```
+
+## Related Concepts
+
+- [[concepts/windows-path-forward-slash-git-bash]] - Same family of Windows shell-encoding gotchas (paths vs. text content)
