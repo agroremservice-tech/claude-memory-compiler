@@ -23,7 +23,7 @@
 | [[concepts/keycrm-budget-process-gating]] | Budget session (сесія → виділення коштів) gates the deal; park with NC at expected session date, prepare ВП-запит in advance | daily/2026-05-21.md | 2026-05-21 |
 | [[concepts/rgs-fuel-storage-capacity-norms]] | Regulatory 45t fuel reserve norm drives sizing: 30m³ AZS insufficient, single РГС-50 marginal, 2×РГС-50 compliant | daily/2026-05-21.md | 2026-05-21 |
 | [[concepts/keycrm-daily-funnel-brief]] | 4-block brief: Гроші в роботі (excl. Нараховано), ТОП ВОРОНКИ (A+B at-risk), Дзвонити сьогодні, Критичні; limit 10/block | daily/2026-05-21.md | 2026-05-29 |
-| [[concepts/keycrm-abc-score-update-sequence]] | Update status before calling update_card_fields; ABC calculated against old status if sequence is reversed | daily/2026-05-25.md | 2026-05-26 |
+| [[concepts/keycrm-abc-score-update-sequence]] | Update status before calling update_card_fields; ABC calculated against old status if sequence is reversed; race condition can score 0 pipeline points even with correct ordering | daily/2026-05-25.md | 2026-07-20 |
 | [[concepts/keycrm-intermediary-contact-handling]] | Leads from an intermediary (посередник) go to status 59 (Уточнення контакту), not 2 (Ідентифікація) | daily/2026-05-25.md | 2026-05-26 |
 | [[concepts/keycrm-seasonal-lead-parking]] | Agricultural season gates deals → КП пауза (72/148); long-term deferral with intact intent → КП пауза, not Зміна планів | daily/2026-05-25.md | 2026-06-11 |
 | [[concepts/keycrm-client-requisites-invoice-trigger]] | Client proactively sending bank requisites signals payment readiness; jump directly to Рахунок (38), skip intermediate stages | daily/2026-05-25.md | 2026-05-26 |
@@ -42,7 +42,7 @@
 | [[concepts/keycrm-skill-file-status-bugs]] | Wrong status IDs and wrong API call ordering in skill files cause silent CRM errors; audit scope expanded in July 2026 | daily/2026-06-10.md, daily/2026-07-17.md | 2026-07-17 |
 | [[concepts/keycrm-rgs-prk-vp-template]] | РГС+ПРК Viber proposal template: котушка, сума без знижки, гарантія 18 міс, документи ліцензії as separate closing block | daily/2026-06-11.md | 2026-06-11 |
 | [[concepts/keycrm-update-card-fields-404-error]] | update_card_fields returns 404 on some leads, silently failing to write ОБЛАСТЬ/Обʼєм/АВС custom fields | daily/2026-06-11.md | 2026-06-11 |
-| [[concepts/keycrm-kdz-vs-kp-pauza-licensing-pause]] | Client-initiated pause → КДЗ (189); manager-scheduled wait → КП пауза (72); distinction determines brief visibility | daily/2026-06-11.md | 2026-06-11 |
+| [[concepts/keycrm-kdz-vs-kp-pauza-licensing-pause]] | Client-initiated pause → КДЗ (189); manager-scheduled wait → КП пауза (72); diagnostic test: "рішення зріє зараз?" | daily/2026-06-11.md | 2026-07-20 |
 | [[concepts/keycrm-mcp-update-lead-title]] | update_lead lacks title by default; add title param to index.js + taskkill node.exe to reload MCP | daily/2026-06-12.md | 2026-06-12 |
 | [[concepts/keycrm-lead-naming-convention]] | Template: ПІДПРИЄМСТВО CAPS * Локація * Продукт * Ім'я * +телефон; periodic audit renames auto-created cards | daily/2026-06-12.md | 2026-06-12 |
 | [[concepts/keycrm-facebook-lead-data-gaps]] | Facebook leads often arrive without phone in CRM card; check notes/comments before renaming or processing | daily/2026-06-12.md | 2026-06-12 |
@@ -58,3 +58,4 @@
 | [[concepts/anthropic-oauth-vs-api-key]] | `sk-ant-oat01` = OAuth subscription token (не API-ключ); `sk-ant-api03` = platform API key з console.anthropic.com — лише він підходить для сторонніх застосунків | daily/2026-07-17.md | 2026-07-17 |
 | [[concepts/vault-secrets-in-git-repos]] | Два паттерни витоку секретів: Bearer-токен у tracked Python-файлі; GitHub PAT у URL remote у `.git/config`; митигація — .env + .gitignore + SSH | daily/2026-07-17.md | 2026-07-17 |
 | [[concepts/anthropic-api-credit-mcp-cascade]] | HTTP 400 "credit balance too low" = вичерпані API-кредити; cascade-ефект вимикає MCP-сервер; taskkill не допомагає — потрібен повний перезапуск після поповнення | daily/2026-07-17.md | 2026-07-17 |
+| [[concepts/flush-py-exit-code-1-failure]] | flush.py crashes with exit code 1 causing full-day session capture blackout; root cause: DETACHED_PROCESS flag contradicts inline comment; run directly to surface real exception | daily/2026-07-22.md | 2026-07-27 |

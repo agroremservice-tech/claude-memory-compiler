@@ -128,6 +128,9 @@ Read the daily log above and compile it into wiki articles following the schema 
 
     cost = 0.0
 
+    def _print_cli_stderr(line: str) -> None:
+        print(f"  [cli stderr] {line}")
+
     try:
         async for message in query(
             prompt=prompt,
@@ -137,6 +140,7 @@ Read the daily log above and compile it into wiki articles following the schema 
                 allowed_tools=["Read", "Write", "Edit", "Glob", "Grep"],
                 permission_mode="acceptEdits",
                 max_turns=30,
+                stderr=_print_cli_stderr,
             ),
         ):
             if isinstance(message, AssistantMessage):
@@ -147,8 +151,24 @@ Read the daily log above and compile it into wiki articles following the schema 
                 cost = message.total_cost_usd or 0.0
                 print(f"  Cost: ${cost:.4f}")
     except Exception as e:
-        print(f"  Error: {e}")
-        return 0.0
+        # The inner CLI's own SessionEnd hook can fire right as this
+        # one-shot agentic session wraps up and surface as a fatal
+        # exception here (same pattern seen in flush.py) - but by then
+        # the actual Write/Edit tool calls for this log have usually
+        # already landed on disk. Check the agent's own compile-log
+        # entry before writing this off as a real failure, so a cosmetic
+        # crash doesn't force an expensive re-run of a log that already
+        # compiled successfully.
+        log_md = KNOWLEDGE_DIR / "log.md"
+        already_logged = (
+            log_md.exists() and f"| {log_path.name}" in log_md.read_text(encoding="utf-8")
+        )
+        if already_logged:
+            print(f"  Error after completion (harmless): {e}")
+            print(f"  {log_path.name} already recorded in knowledge/log.md - treating as done.")
+        else:
+            print(f"  Error: {e}")
+            return 0.0
 
     # Update state
     rel_path = log_path.name
