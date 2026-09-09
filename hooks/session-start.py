@@ -93,6 +93,22 @@ def _fmt_date(d) -> str:
     return d.strftime("%d.%m") if d else "—"
 
 
+def _get_checklist_lead_ids(today: date) -> set:
+    """Lead IDs already listed in today's auto-generated Чек-лист (07:06 scheduled task).
+
+    Дзвонити сьогодні дублювало ці ліди (однакові статуси + control-list), тому
+    виключаємо їх тут і показуємо в брифі лише те, що чек-лист не покриває.
+    """
+    path = INBOX_DIR / f"Чек-лист {today.isoformat()}.md"
+    if not path.exists():
+        return set()
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return set()
+    return {int(m) for m in re.findall(r"/leads/(\d+)\)", text)}
+
+
 # ── Briefing builder ───────────────────────────────────────────────────────────
 
 def _fmt_amount(amount) -> str:
@@ -196,12 +212,15 @@ def build_briefing() -> str:
         out.append("")
 
     # ── 5. Дзвонити сьогодні (НК <= сьогодні, >= cutoff) ─────────────────
+    # Виключаємо ліди, що вже є в сьогоднішньому автоматичному Чек-листі
+    # (scheduled task о 07:06) — інакше цей розділ дублює його вміст.
+    checklist_ids = _get_checklist_lead_ids(today)
     call_rows = []
     seen_ids: set = set()
     for sid in CALL_SIDS:
         for c in cards_by_status.get(sid, []):
             cid = c.get("id")
-            if cid in seen_ids:
+            if cid in seen_ids or cid in checklist_ids:
                 continue
             nc_date = _parse_nc(c.get("communicate_at", ""))
             if nc_date and cutoff <= nc_date <= today:
@@ -249,6 +268,8 @@ def build_briefing() -> str:
     out = top5_section + out
 
     out.append("### 📞 ДЗВОНИТИ СЬОГОДНІ\n")
+    if checklist_ids:
+        out.append(f"(без лідів з Inbox/Чек-лист {today.isoformat()}.md — щоб не дублювати)\n")
     if not call_rows:
         out.append("НК немає ✅\n")
     else:
